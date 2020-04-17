@@ -1,0 +1,396 @@
+#include <Keyboard.h>
+
+/* Modify the following definitions to fit your wireless and enrollment credentials. */
+
+#define device_version 73 // Change to the ChromeOS version you expect to use with Centipede; Changes have been reported in the following ranges 58-68, 69, 70
+
+#define wifi_name "-----------" // Esta es una variable para ponerle el nombre del wifi el de Student....
+#define wifi_pass "" // Define the password for your wireless connection.
+#define wifi_security 0 //[0,1,2] Set to 0 for open, 1 for WEP, 2 for WPA
+#define username "*****" // Define the user name for enrolling the device.
+#define password "*******" // The password for the enrollment GAFE account.
+
+
+//Estas de arriba seran las unica variables string que usaras en el programa. Poner todo dentro de las comillas example  
+//#define wifi_name "StudentM"   algo por el estilo.
+
+
+//Lo de abajo es la configuracion del arduino donde no le modifique nada.
+
+// Use these options to deter mine if you want to disable analytics, skip asset ID, or if you need to slow down the Centipede
+
+#define sendUsageToGoogle 0 //[0,1] Set to 0 if you want to un-check the box to send usage analytics to Google
+#define shutdown_when_finished 1 //[0,1] Set to 0 if you want Centipede to stop at the asset ID and location screen
+#define selected_on_boot 1 //[0,1,2,3]  Active location when device poweron : 3 - "Let's go", 2 - accessibility, 1 - language (Default), 0 - menu
+
+/* These are advanced options. The defaults should be fine, but feel free to tweak values below. */
+
+#define setWiFi true //[true,false] Set to false for devices that already have WiFi setup and have accepted Terms of Service (ToS)
+
+// Use this area for advanced network setup options
+#define advancedNetworkSetup false //[true,false] Set to true for EAP configuration, and fill out the definitions below
+#define eapMethod "LEAP" // Valid options are "LEAP" "PEAP" "EAP-TLS" or "EAP-TTLS" - Note that they require the quotes to work properly
+#define phaseTwoAuthentication 2 //[0,1,2,3,4,5,6] Set to 0 for automatic, 1 for EAP-MD5, 2 for MSCHAP(v2 pre v69; v1 V69+, 3 for MSCHAPv2, 4 for PAP, 5 for CHAP, 6 for GTC; v69+)
+#define serverCaCertificateCheck 0 //[0,1] 0 is default, 1 is "Do not check"
+#define subjectMatch "" // Fill in subject match here if needed for advanced wireless
+#define identity "identity" // Fill in identity here if needed for advanced wireless
+#define anonymousIdentity "" // Fill in anonymous identity here for advanced wireless
+#define saveIdentityAndPassword 0 //[0,1] Set to 1 to save identity and password. NOT RECOMMENDED
+#define sso 0 //[0,1] Set to 1 if using Single Sign On - NOTE: May need additional configuration in Advanced Network Setup around line 182.
+
+// Use this section for additional non-traditional methods
+#define longer_enrollment_time 5 // Set to additional seconds to wait for Device Configuration and Enrollment
+#define update_via_guest 1 //[0,1] Set to 1 to go into Guest Mode and navigate to chrome://chrome and Check for Updates
+#define powerwash 0 //[0,1] Powerwash the device BEFORE enrollment is completed - NOTE: Will not work on ENROLLED devices. Used for Setting up Centipede.
+#define sign_in 0 //[0,1] Set to 1 to sign-in to the device after enrollment - NOTE: Will not sign-in if update_via_guest or powerwash is set to true;
+#define remove_enrollment_wifi 0 //[0,1] Set to 1 to remove the enrollment wifi network. *sign_in also must be true* - NOTE: Only set to true when Chrome Device Network has been pulled down
+#define enroll_device_cert 0 //[0,1] Set to 1 if enrolling device wide certificate *sign_in also must be true* - NOTE: Works best if user _*only*_ has Certificate Enrollment extension force installed
+
+#define slowMode 0 // [0,1] Set to 1 if Centipede appears to be moving too quickly at any screen. This will slow down the entire process
+#define update_wait_time 90 // Set to seconds to wait for Update with update_via_guest before exiting guest mode.  Update will continue while device is online.
+
+/* Do not modify anything below this line unless you're confident that you understand how to program Arduino or C */
+
+// Version Defination
+#define VERSION_69 (device_version >= 69)
+#define VERSION_70 (device_version >= 70)
+
+// Special characters definition
+#define KEY_LEFT_CTRL   0x80
+#define KEY_LEFT_SHIFT  0x81
+#define KEY_LEFT_ALT    0x82
+#define KEY_RIGHT_CTRL  0x84
+#define KEY_RIGHT_SHIFT 0x85
+#define KEY_RIGHT_ALT   0x86
+#define KEY_UP_ARROW    0xDA
+#define KEY_DOWN_ARROW  0xD9
+#define KEY_LEFT_ARROW  0xD8
+#define KEY_RIGHT_ARROW 0xD7
+#define KEY_BACKSPACE   0xB2
+#define KEY_TAB         0xB3
+#define KEY_ENTER       0xB0
+#define KEY_ESC         0xB1
+#define KEY_CAPS_LOCK   0xC1
+
+int buttonPin = 2;  // Set a button to any pin
+int RXLED = 17;
+static uint8_t __clock_prescaler = (CLKPR & (_BV(CLKPS0) | _BV(CLKPS1) | _BV(CLKPS2) | _BV(CLKPS3)));
+
+//***********************Inicio de la  Explicacion **************
+// void setup es lo primero que hace el programa al iniciar, setPrescaler no recuerdo, pero el Keyboard.begin permita usar el //simulador de teclas
+//y la funcion de keyboard
+//void loop es la clase principal el cual se repetira siempre. se puede modificar para decirle al programa que en cuanto termine //tarde 1000 minutos para
+//volverse a  activar, o el tiempo que desees.
+//el programa esta dividido en clases. la clase principal es "void loop". hay otras que estan fuera del programa principal y haces //una
+//llamada para realizar un subcodigo en las siguientes clases como:
+//wifiConfig();
+//wait(1);
+//WelcomeSection();
+//wifiSection();
+//ToS();  
+//enterEnrollment();
+//enterCredentials();
+//enterAsGuestBrowser();
+//updateChromeOS();  
+
+//Cada uno de estos trate de que sea llamado en las diferentes pantallas del chromebook como wifiConfig() el cual al inicio
+//agrega al wireless
+//wait(numero)  pone el sistema en detenido dependiendo de los segundos que le indiques.  despues de los segundos que le //indiques, continuara
+//trabajando
+
+//El arduino maneja datos tipo  characteres que es una sola letra y lo encuentras "s" de esta forma, tambien maneja special caracter que viene
+//siendo  KEY_LEFT_SHIFT , estos los configuras arriba en los renglones 64-78  y por ultimo maneja un string completo que es //un conjunto
+//de caracteres como por ejemplo wifi_name donde lo asignas al principio en #define wifi_name
+
+
+//Estas funciones son del keyboard o lo usa
+// Keyboard.press(KEY_LEFT_SHIFT);        Este permite usar la character especial simulando dejando presionado esa tecla
+// Keyboard.release(KEY_LEFT_ALT);         Este permite usar la character especial simulando liberando esa tecla anteriormente //presionada
+// Keyboard.write('s');                    Permite escribir un solo caracter, en este caso s
+//  Keyboard.write(KEY_TAB);               simula presionar y liberar el caracter especial KEY_TAB simulando ser el  TAB
+//  keyboard.print(variable);              Permite escribir un string completo
+//  repeatKey(KEY_TAB,5);                 Esta clase, permite repetir un caracter especial, en este caso 5 veces la tecla TAB
+
+
+//Con esta informacion puede cubrir las necesidades para hacer enrollment los chromebook.
+//***********************fin de la  Explicacion **************
+
+
+void setup()
+{
+  setPrescaler();
+  Keyboard.begin();
+ 
+TXLED1;
+wait(5);
+}  
+   
+void loop() { //Main principal clase
+wait(30);    
+
+
+
+wifiConfig();
+wait(1);
+WelcomeSection();
+wait(10);
+
+wifiSection();
+wait(5);
+ToS();
+wait(120);  
+enterEnrollment();
+wait(6);
+enterCredentials();              
+         wait(120);
+
+         
+Keyboard.write(KEY_ENTER);
+wait(20);
+enterAsGuestBrowser();
+
+ updateChromeOS();                                                                      
+//closeWindow();
+
+//logOff();
+wait(3000);
+
+
+
+
+
+                                                       
+
+
+
+
+
+
+
+                                                                     
+       
+
+
+
+
+                 
+
+
+
+
+
+                                       
+
+     
+ 
+//push button to
+ 
+}
+
+void logOff() { // Shutdown i
+  Keyboard.press(KEY_LEFT_SHIFT);
+  Keyboard.press(KEY_LEFT_ALT);
+  Keyboard.write('s');
+  Keyboard.release(KEY_LEFT_ALT);
+  Keyboard.release(KEY_LEFT_SHIFT);
+  wait(2);
+  Keyboard.write(KEY_TAB);
+ Keyboard.write(KEY_ENTER);
+ wait(5);
+}
+
+
+
+void closeWindow(){
+  Keyboard.press(KEY_LEFT_CTRL);
+  Keyboard.write('w');
+  wait(2);
+  Keyboard.write('w');
+  Keyboard.release(KEY_LEFT_CTRL);
+  wait(2);
+}
+
+void updateChromeOS(){
+
+  Keyboard.press(KEY_LEFT_ALT);
+  Keyboard.write('f');
+  wait(2);
+  Keyboard.release(KEY_LEFT_ALT);
+  wait(2);
+  Keyboard.write(KEY_UP_ARROW);
+  Keyboard.write(KEY_RIGHT_ARROW);
+  Keyboard.write(KEY_ENTER);
+  wait(5);
+  repeatKey(KEY_TAB,2);
+  Keyboard.write(KEY_ENTER);
+}
+
+
+void enterAsGuestBrowser(){
+
+  repeatKey(KEY_TAB,5);
+  Keyboard.write(KEY_ENTER);
+  wait(30);
+ 
+ 
+}
+
+
+
+void enterCredentials() {
+  wait(5);
+  Keyboard.print(username);
+  wait(3);
+  Keyboard.write(KEY_ENTER);
+  wait(8);
+ 
+  Keyboard.print(password);
+ 
+  wait(3);
+  Keyboard.write(KEY_ENTER);
+  wait(3);
+ 
+}    
+
+
+
+                             
+
+                                 
+ 
+
+void enterEnrollment() {
+  Keyboard.press(KEY_LEFT_CTRL);
+  Keyboard.press(KEY_LEFT_ALT);
+  Keyboard.write('e');
+  Keyboard.release(KEY_LEFT_ALT);
+  Keyboard.release(KEY_LEFT_CTRL);
+  wait(1);
+}
+
+void wifiSection(){
+  repeatKey(KEY_TAB,3);
+  wait(2);
+  Keyboard.write(KEY_ENTER);
+ wait(2);
+}
+
+         
+void SecondSection(){
+Keyboard.write(KEY_TAB);
+wait(2);
+repeatKey(KEY_DOWN_ARROW,20);
+wait(2);
+Keyboard.write(KEY_ENTER);
+wait(2);
+Keyboard.print(wifi_name);
+wait(2);
+repeatKey(KEY_TAB,2);
+wait(3);
+Keyboard.write(KEY_ENTER);
+wait(5);
+ 
+}
+
+void wifiConfig() {
+ Keyboard.press(KEY_LEFT_SHIFT);
+  Keyboard.press(KEY_LEFT_ALT);
+  Keyboard.write('s');
+  Keyboard.release(KEY_LEFT_ALT);
+  Keyboard.release(KEY_LEFT_SHIFT);
+  wait(2);
+  //to select the Network
+  repeatKey(KEY_TAB, 4);  // 3 for pre v70, 4 for ver 70 (black menu)
+  wait(1);
+  Keyboard.write(KEY_ENTER);
+  wait(1);
+  //to select the 'add Wifi' icon
+  repeatKey(KEY_TAB, 3);
+  Keyboard.write(KEY_ENTER);
+  wait(1);
+  // SSID
+  Keyboard.print(wifi_name);
+  wait(1);
+  // TAB
+ repeatKey(KEY_TAB, 3);
+  wait(1);
+  Keyboard.write(KEY_ENTER);
+    wait(1);
+}
+
+void ToS(){
+// Terms of Service screen
+  wait(1);
+  repeatKey(KEY_TAB, 2);
+  if (!sendUsageToGoogle) {
+    Keyboard.write(KEY_ENTER);
+    wait(1);
+  }
+  repeatKey(KEY_TAB, 3);
+  wait(1);
+  Keyboard.write(KEY_ENTER);
+}
+             
+
+               
+
+
+                   
+
+
+void WelcomeSection() {
+
+  repeatKey(KEY_TAB,3);
+Keyboard.write(KEY_ENTER);
+}
+
+
+void repeatKey(byte key, int num) {
+  for (int i = 0; i < num; i++) {
+    Keyboard.write(key);
+    wait(1);
+  }
+}
+
+
+void wait(int cycles) {
+  for (int i = 0; i < cycles; i++) {
+    blink();
+    if (slowMode) {
+      delay(250);
+         
+     
+    }
+  }
+}
+
+void blink() {
+  digitalWrite(RXLED, LOW);
+  //  TXLED1;
+  delay(250);
+  digitalWrite(RXLED, HIGH);
+  //  TXLED0;
+  delay(250);
+}
+
+
+void setPrescaler() {
+  // Disable interrupts.
+  uint8_t oldSREG = SREG;
+  cli();
+
+  // Enable change.
+  CLKPR = _BV(CLKPCE); // write the CLKPCE bit to one and all the other to zero
+
+  // Change clock division.
+  CLKPR = 0x0; // write the CLKPS0..3 bits while writing the CLKPE bit to zero
+
+  // Copy for fast access.
+  __clock_prescaler = 0x0;
+
+  // Recopy interrupt register.
+  SREG = oldSREG;
+}
+
+//TODO:
+#define in_developer_mode 0 // Set to 1 if device is in developer mode    
